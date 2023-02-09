@@ -1,0 +1,51 @@
+﻿@page "/"
+@implements IDisposable
+
+@using InternetRadioClient.Services
+
+@inject ConnectionService ConnectionService
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Index</PageTitle>
+
+<h1>Hello, world!</h1>
+
+Welcome to your new app.
+
+<audio id="audioPlayer" controls></audio>
+
+<button class="btn btn-primary" @onclick="Connect">Click me</button>
+
+@code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private int _isPlaying;
+
+    private async void Connect()
+    {
+        await ConnectionService.ConnectAsync("127.0.0.1", 1100, _cancellationTokenSource.Token);
+        Interlocked.Exchange(ref _isPlaying, 1);
+        _ = Task.Run(() => PlayAudio(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+    }
+
+    public void Dispose()
+    {
+        Interlocked.Exchange(ref _isPlaying, 0);
+        _cancellationTokenSource.Cancel();
+        _ = ConnectionService.DisconnectAsync(_cancellationTokenSource.Token);
+    }
+    
+    private async void PlayAudio(CancellationToken cancellationToken)
+    {
+        Console.WriteLine("Hello play");
+        while (Interlocked.CompareExchange(ref _isPlaying, 0, 0) == 1)
+        {
+            while (ConnectionService.TryDequeueAudio(out var audioData) && audioData != null)
+            {
+                await JsRuntime.InvokeAsync<object>("playAudio", cancellationToken, audioData);
+            }
+
+            await Task.Delay(10, cancellationToken);
+        }
+    }
+
+}

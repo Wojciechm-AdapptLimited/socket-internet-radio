@@ -16,13 +16,13 @@ class Client : std::enable_shared_from_this<Client> {
 private:
     static constexpr int BUFFER_SIZE = 1024;
     const int socket;
-    std::weak_ptr<ClientManager> manager;
+    std::shared_ptr<ClientManager> manager;
 
     void handleError();
 
     std::string readRequest();
 public:
-    explicit Client(std::weak_ptr<ClientManager> manager, int socket);
+    explicit Client(std::shared_ptr<ClientManager> manager, int socket);
 
     virtual ~Client();
 

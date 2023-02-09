@@ -31,7 +31,7 @@ void AudioStreamer::readDirectory(const std::filesystem::path& dir) {
     std::unique_lock<std::mutex> lock(audioMutex);
 
     for (const auto& entry: std::filesystem::directory_iterator(dir)) {
-        if (std::filesystem::is_regular_file(entry.path()) && entry.path().extension() == ".mp3") {
+        if (std::filesystem::is_regular_file(entry.path()) && entry.path().extension() == ".wav") {
             audioQueue.emplace_back(entry.path());
             audioFiles.push_back(entry.path());
         }
