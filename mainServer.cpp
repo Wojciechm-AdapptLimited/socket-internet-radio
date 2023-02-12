@@ -11,7 +11,7 @@ std::atomic<bool> g_exit_program{false};
 
 void sig_handler(int signum) {
     if (signum == SIGTERM) {
-        std::cout << "Received SIGTERM" << std::endl;
+        std::cout << "Received termination signal" << std::endl;
         g_exit_program = true;
     }
 }

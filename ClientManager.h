@@ -21,7 +21,8 @@ private:
     std::atomic<bool> anyClients{false};
 public:
     std::atomic<bool> closeServer{false};
-    std::function<void(Packet& packet)> broadcastPacket;
+    std::function<void(Packet& packet)> broadcastAudio;
+    std::function<void()> broadcastInfo;
 
     explicit ClientManager(std::shared_ptr<AudioStreamer> streamer);
 
@@ -32,6 +33,8 @@ public:
     void removeClient(int clientSocket);
 
     void handleRequests();
+
+    void sendInfoToClient(std::unique_ptr<Client>& client);
 
     void closeClients();
 };

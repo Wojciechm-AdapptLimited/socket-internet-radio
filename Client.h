@@ -28,7 +28,7 @@ public:
 
     void sendPacketToClient(Packet& packet);
 
-    std::optional<Packet> receivePacketFromClient();
+    void receivePacketFromClient(Packet& packet);
 };
 
 

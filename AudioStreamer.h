@@ -22,6 +22,11 @@ class AudioStreamer {
 private:
     std::deque<std::filesystem::path> audioQueue;
     std::vector<std::filesystem::path> audioFiles;
+
+    std::vector<char> currentFileHeader = std::vector<char>(145, 0);
+    std::filesystem::path currentFileName;
+    int currentFileSize;
+
     std::mutex audioMutex;
     std::pmr::monotonic_buffer_resource memPool;
 
@@ -32,16 +37,19 @@ private:
 public:
     std::atomic<bool> finishStreaming{false};
     std::atomic<bool> isRequestedNext{false};
-    std::filesystem::path currentFileName;
-    std::size_t currentFileSize;
 
-    std::function<void(Packet& packet)> broadcastPacket;
+    std::function<void(Packet& packet)> broadcastAudio;
+    std::function<void()> broadcastInfo;
 
-    Packet getAvailableFilesPacket();
+    void getAvailableFilesPacket(Packet& packet);
 
-    Packet getQueueStatePacket();
+    void getQueueStatePacket(Packet& packet);
 
-    Packet getCurrentFileSizePacket();
+    void getCurrentFileSizePacket(Packet& packet);
+
+    void getCurrentFileNamePacket(Packet& packet);
+
+    void getCurrentFileHeaderPacket(Packet& packet);
 
     void readDirectory(const std::filesystem::path& dir);
 

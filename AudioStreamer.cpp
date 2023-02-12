@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "AudioStreamer.h"
 
 
@@ -14,29 +15,36 @@ std::optional<std::filesystem::path> AudioStreamer::getCurrentFileName() {
 }
 
 void AudioStreamer::streamAudioFile(std::ifstream& audio) {
-    std::pmr::vector<char> audioBuffer(BUFFER_SIZE, 0, &memPool);
+    std::pmr::vector<char> audioBuffer(DATA_SIZE, 0, &memPool);
 
     audio.seekg (0, std::ifstream::end);
     currentFileSize = audio.tellg();
     audio.seekg (0, std::ifstream::beg);
 
-    Packet packet = getCurrentFileSizePacket();
-    broadcastPacket(packet);
+    audio.read(currentFileHeader.data(), 145);
 
-    while (audio) {
+    broadcastInfo();
+
+    int sent = 0;
+
+    while (sent < (currentFileSize - 145) && !finishStreaming) {
         if (isRequestedNext) {
             isRequestedNext = false;
             return;
         }
 
-        audio.read(audioBuffer.data(), BUFFER_SIZE);
+        int read = audio.readsome(audioBuffer.data(), DATA_SIZE);
 
         Packet musicStream {};
         musicStream.packetType = PacketType::STREAM;
-        musicStream.dataSize = audio.gcount();
+        musicStream.dataSize = read;
         musicStream.data = audioBuffer.data();
 
-        broadcastPacket(musicStream);
+        broadcastAudio(musicStream);
+
+        sent += read;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 }
 
@@ -52,7 +60,7 @@ void AudioStreamer::readDirectory(const std::filesystem::path& dir) {
 }
 
 void AudioStreamer::streamAudioQueue() {
-    while (true) {
+    while (!finishStreaming) {
         std::optional<std::filesystem::path> currentFile = getCurrentFileName();
 
         if (!currentFile.has_value()) {
@@ -77,10 +85,6 @@ void AudioStreamer::streamAudioQueue() {
             std::unique_lock<std::mutex> lock(audioMutex);
             audioQueue.emplace_back(currentFileName);
         }
-
-        if (finishStreaming) {
-            return;
-        }
     }
 }
 
@@ -88,63 +92,85 @@ void AudioStreamer::reorderQueue(const std::vector<std::filesystem::path>& newOr
     std::unique_lock<std::mutex> lock(audioMutex);
 
     audioQueue.clear();
-    std::copy_if(newOrder.begin(), newOrder.end(), std::back_inserter(audioQueue), [this](const auto& path) {
-        return std::find(audioFiles.begin(), audioFiles.end(), path) != audioFiles.end();
+    std::copy_if(newOrder.begin(), newOrder.end(), std::back_inserter(audioQueue), [this](const std::filesystem::path& path) {
+        return std::ranges::any_of(audioFiles, [path](const std::filesystem::path& file) {
+            return file.filename() == path;
+        });
     });
 }
 
 void AudioStreamer::addToQueue(const std::filesystem::path& path) {
-    std::unique_lock<std::mutex> lock(audioMutex);
+    std::unique_lock<std::mutex> lock(audioMutex);\
 
-    if (std::find(audioFiles.begin(), audioFiles.end(), path) != audioFiles.end()) {
-        audioQueue.emplace_back(path);
+    auto it = std::ranges::find_if(audioFiles, [path](const std::filesystem::path& file) {
+        return file.filename() == path;
+    });
+
+    if (it != audioFiles.end()) {
+        audioQueue.emplace_back(*it);
     }
 }
 
 void AudioStreamer::removeFromQueue(const std::filesystem::path& path) {
     std::unique_lock<std::mutex> lock(audioMutex);
 
-    audioQueue.erase(std::remove(audioQueue.begin(), audioQueue.end(), path), audioQueue.end());
+    std::erase_if(audioQueue, [path](const std::filesystem::path& p) {
+        return p.filename() == path;
+    });
 }
 
-Packet AudioStreamer::getAvailableFilesPacket() {
+void AudioStreamer::getAvailableFilesPacket(Packet& packet) {
     std::unique_lock<std::mutex> lock(audioMutex);
 
     std::string message;
     for(const auto& file : audioFiles){
-        message += file.string() + ";";
+        message += file.filename().string() + ";";
     }
 
-    Packet allFilesPacket {};
-    allFilesPacket.packetType = PacketType::FILES;
-    allFilesPacket.dataSize = sizeof(message.data());
-    allFilesPacket.data = message.data();
-
-    return allFilesPacket;
+    packet.packetType = PacketType::FILES;
+    packet.dataSize = static_cast<unsigned int>(message.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, message.data(), packet.dataSize);
 }
 
-Packet AudioStreamer::getQueueStatePacket() {
+void AudioStreamer::getQueueStatePacket(Packet& packet) {
     std::unique_lock<std::mutex> lock(audioMutex);
 
     std::string message;
     for(const auto& file : audioQueue){
-        message += file.string() + ";";
+        message += file.filename().string() + ";";
     }
 
-    Packet queuePacket {};
-    queuePacket.packetType = PacketType::QUEUE;
-    queuePacket.dataSize = sizeof(message.data());
-    queuePacket.data = message.data();
-
-    return queuePacket;
+    packet.packetType = PacketType::QUEUE;
+    packet.dataSize = static_cast<unsigned int>(message.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, message.data(), packet.dataSize);
 }
 
-Packet AudioStreamer::getCurrentFileSizePacket() {
-    Packet musicStreamSize {};
-    musicStreamSize.packetType = PacketType::SIZE;
-    musicStreamSize.dataSize = sizeof(long);
-    musicStreamSize.data = new char[DATA_SIZE];
-    std::memcpy(musicStreamSize.data, &currentFileSize, sizeof(long));
+void AudioStreamer::getCurrentFileSizePacket(Packet& packet) {
+    std::unique_lock<std::mutex> lock(audioMutex);
 
-    return musicStreamSize;
+    packet.packetType = PacketType::STREAM_SIZE;
+    packet.dataSize = sizeof(int);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, &currentFileSize, packet.dataSize);
+}
+
+void AudioStreamer::getCurrentFileNamePacket(Packet& packet) {
+    std::unique_lock<std::mutex> lock(audioMutex);
+
+    std::string fileName = currentFileName.filename().string();
+    packet.packetType = PacketType::STREAM_NAME;
+    packet.dataSize = static_cast<unsigned int>(fileName.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, fileName.data(), packet.dataSize);
+}
+
+void AudioStreamer::getCurrentFileHeaderPacket(Packet& packet) {
+    std::unique_lock<std::mutex> lock(audioMutex);
+
+    packet.packetType = PacketType::STREAM_HEADER;
+    packet.dataSize = currentFileHeader.size();
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, currentFileHeader.data(), packet.dataSize);
 }

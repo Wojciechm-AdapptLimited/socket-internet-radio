@@ -8,39 +8,41 @@ void freePacket(Packet& packet) {
     }
 }
 
-std::size_t sendPacket(int socket, Packet& packet) {
-    std::vector<char> sendBuffer(BUFFER_SIZE);
+std::size_t sendPacket(int socket, const Packet& packet) {
+    char sendBuffer[BUFFER_SIZE];
     size_t offset = 0;
 
-    std::memcpy(sendBuffer.data() + offset, &packet.packetType, sizeof(packet.packetType));
+    memcpy(sendBuffer + offset, &packet.packetType, sizeof(packet.packetType));
     offset += sizeof(packet.packetType);
 
-    std::memcpy(sendBuffer.data() + offset, &packet.dataSize, sizeof(packet.dataSize));
+    memcpy(sendBuffer + offset, &packet.dataSize, sizeof(packet.dataSize));
     offset += sizeof(packet.dataSize);
 
     if (packet.dataSize > 0) {
-        std::memcpy(sendBuffer.data() + offset, &packet.data, DATA_SIZE);
+        memcpy(sendBuffer + offset, packet.data, DATA_SIZE);
     }
 
-    std::size_t sent = send(socket, sendBuffer.data(), BUFFER_SIZE, 0);
+    std::size_t sent = send(socket, sendBuffer, BUFFER_SIZE, 0);
 
     return sent;
 }
 
-Packet receivePacket(int socket) {
-    std::vector<char> requestBuffer(BUFFER_SIZE);
-    std::size_t received = recv(socket, requestBuffer.data(), BUFFER_SIZE, 0);
+void receivePacket(int socket, Packet& packet) {
+    char receiveBuffer[BUFFER_SIZE];
+    std::size_t received = recv(socket, receiveBuffer, BUFFER_SIZE, 0);
 
     if (received == -1) {
-        Packet packet {PacketType::END, 0, nullptr};
-        return packet;
+        packet.packetType = PacketType::END;
+        packet.dataSize = 0;
+        packet.data = nullptr;
+        return;
     }
 
     std::size_t curPos = received;
 
     while(received < BUFFER_SIZE)
     {
-        received += recv(socket, requestBuffer.data() + curPos, BUFFER_SIZE - curPos, 0);
+        received += recv(socket, receiveBuffer + curPos, BUFFER_SIZE - curPos, 0);
         curPos = received;
 
         if(received == 0)
@@ -49,21 +51,17 @@ Packet receivePacket(int socket) {
         }
     }
 
-    Packet packet {};
-
     size_t offset = 0;
-    std::memcpy(&packet.packetType, requestBuffer.data() + offset, sizeof(packet.packetType));
+    memcpy(&packet.packetType, receiveBuffer + offset, sizeof(packet.packetType));
     offset += sizeof(packet.packetType);
-    std::memcpy(&packet.dataSize, requestBuffer.data() + offset, sizeof(packet.dataSize));
+    memcpy(&packet.dataSize, receiveBuffer + offset, sizeof(packet.dataSize));
     offset += sizeof(packet.dataSize);
 
     if(packet.dataSize > 0)
     {
         packet.data = new char[packet.dataSize];
-        memcpy(packet.data, requestBuffer.data() + offset, packet.dataSize);
+        memcpy(packet.data, receiveBuffer + offset, packet.dataSize);
     }
-
-    return packet;
 }
 
 std::vector<std::filesystem::path> parseRequest(Packet& packet) {
@@ -81,7 +79,7 @@ std::vector<std::filesystem::path> parseRequest(Packet& packet) {
 }
 
 std::vector<std::string> split(std::string s, const std::string& delimiter) {
-    size_t pos = 0;
+    size_t pos;
     std::vector<std::string> vec;
 
     while ((pos = s.find(delimiter)) != std::string::npos) {

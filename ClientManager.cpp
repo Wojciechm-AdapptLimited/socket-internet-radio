@@ -2,10 +2,10 @@
 #include "AudioStreamer.h"
 
 ClientManager::ClientManager(std::shared_ptr<AudioStreamer> streamer) : streamer(std::move(streamer)), clients(), pollFds(), clientMutex() {
-    broadcastPacket = [&](Packet packet) {
+    broadcastAudio = [&](Packet packet) {
         std::unique_lock<std::mutex> lock(clientMutex);
 
-        if (poll(pollFds.data(), pollFds.size(), 100) < 0) {
+        if (poll(pollFds.data(), pollFds.size(), 100) <= 0) {
             return;
         }
 
@@ -16,7 +16,29 @@ ClientManager::ClientManager(std::shared_ptr<AudioStreamer> streamer) : streamer
         }
     };
 
-    this->streamer->broadcastPacket = broadcastPacket;
+    broadcastInfo = [&]() {
+        std::unique_lock<std::mutex> lock(clientMutex);
+
+        if (poll(pollFds.data(), pollFds.size(), 100) < 0) {
+            return;
+        }
+
+        Packet streamSize {};
+        Packet streamName {};
+
+        this->streamer->getCurrentFileSizePacket(streamSize);
+        this->streamer->getCurrentFileNamePacket(streamName);
+
+        for (int i = 0; i < pollFds.size(); ++i) {
+            if (pollFds[i].revents & POLLOUT) {
+                clients[i]->sendPacketToClient(streamSize);
+                clients[i]->sendPacketToClient(streamName);
+            }
+        }
+    };
+
+    this->streamer->broadcastAudio = broadcastAudio;
+    this->streamer->broadcastInfo = broadcastInfo;
 }
 
 std::shared_ptr<ClientManager> ClientManager::getPtr() {
@@ -26,10 +48,7 @@ std::shared_ptr<ClientManager> ClientManager::getPtr() {
 void ClientManager::addClient(std::unique_ptr<Client>& newClient, pollfd newPollFd) {
     std::unique_lock<std::mutex> lock(clientMutex);
 
-    //newClient->sendFileList(streamer->getAvailableFilesSerialized());
-    //newClient->sendFileList(streamer->getQueueStateSerialized());
-    Packet packet = streamer->getCurrentFileSizePacket();
-    newClient->sendPacketToClient(packet);
+    sendInfoToClient(newClient);
 
     clients.push_back(std::move(newClient));
     pollFds.push_back(newPollFd);
@@ -74,31 +93,24 @@ void ClientManager::handleRequests() {
 
             for (int i = 0; i < pollFds.size(); i++) {
                 if (pollFds[i].revents & POLLIN) {
-                    std::optional<Packet> request = clients[i]->receivePacketFromClient();
+                    Packet packet {};
+                    clients[i]->receivePacketFromClient(packet);
 
-                    if (!request.has_value()) {
+                    if (packet.packetType == PacketType::END) {
                         continue;
                     }
 
-                    PacketType requestType = request.value().packetType;
-
-                    if (requestType == PacketType::SKIP) {
+                    if (packet.packetType == PacketType::SKIP) {
                         streamer->isRequestedNext = true;
-                    } else if (requestType == PacketType::REMOVE) {
-                        streamer->removeFromQueue(parseRequest(request.value())[0]);
-                    } else if (requestType == PacketType::ADD) {
-                        streamer->addToQueue(parseRequest(request.value())[0]);
-                    } else if (requestType == PacketType::REORDER) {
-                        streamer->reorderQueue(parseRequest(request.value()));
+                    } else if (packet.packetType == PacketType::REMOVE) {
+                        streamer->removeFromQueue(parseRequest(packet)[0]);
+                    } else if (packet.packetType == PacketType::ADD) {
+                        streamer->addToQueue(parseRequest(packet)[0]);
+                    } else if (packet.packetType == PacketType::REORDER) {
+                        streamer->reorderQueue(parseRequest(packet));
                     }
 
-                    Packet allFiles = streamer->getAvailableFilesPacket();
-                    Packet queue = streamer->getQueueStatePacket();
-
-                    for (const auto& client : clients) {
-                        client->sendPacketToClient(allFiles);
-                        client->sendPacketToClient(queue);
-                    }
+                    freePacket(packet);
                 }
                 if (pollFds[i].revents & (POLLHUP | POLLERR)) {
                     clients.erase(clients.begin() + i);
@@ -108,6 +120,24 @@ void ClientManager::handleRequests() {
         }
 
     }
+}
+
+void ClientManager::sendInfoToClient(std::unique_ptr<Client>& client) {
+    Packet streamSize {};
+    Packet streamName {};
+    Packet streamHeader {};
+
+    streamer->getCurrentFileSizePacket(streamSize);
+    streamer->getCurrentFileNamePacket(streamName);
+    streamer->getCurrentFileHeaderPacket(streamHeader);
+
+    client->sendPacketToClient(streamSize);
+    client->sendPacketToClient(streamName);
+    client->sendPacketToClient(streamHeader);
+
+    freePacket(streamSize);
+    freePacket(streamName);
+    freePacket(streamHeader);
 }
 
 void ClientManager::closeClients() {

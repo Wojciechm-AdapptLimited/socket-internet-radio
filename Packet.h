@@ -10,7 +10,7 @@
 #define INTERNET_RADIO_REQUEST_H
 
 enum class PacketType : int {
-    STREAM, SIZE, SKIP, ADD, REMOVE, REORDER, END, FILES, QUEUE
+    STREAM, STREAM_SIZE, STREAM_NAME, STREAM_HEADER, SKIP, ADD, REMOVE, REORDER, END, FILES, QUEUE
 };
 
 struct Packet {
@@ -30,8 +30,8 @@ struct NetworkTraffic {
 constexpr int BUFFER_SIZE = 1024;
 constexpr int DATA_SIZE = BUFFER_SIZE - sizeof(Packet) + sizeof(char*);
 
-std::size_t sendPacket(int socket, Packet& packet);
-Packet receivePacket(int socket);
+std::size_t sendPacket(int socket, const Packet& packet);
+void receivePacket(int socket, Packet &packet);
 void freePacket(Packet& packet);
 std::vector<std::filesystem::path> parseRequest(Packet& packet);
 std::vector<std::string> split(std::string s, const std::string& delimiter);

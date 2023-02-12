@@ -12,11 +12,11 @@
 #include "Packet.h"
 
 
-
 void handlePackets(int socket, std::atomic<bool>& clientRunning, NetworkTraffic& networkTraffic) {
-    while(clientRunning) {
+    while (clientRunning) {
         {
-            Packet packetToReceive = receivePacket(socket);
+            Packet packetToReceive{};
+            receivePacket(socket, packetToReceive);
             std::lock_guard<std::mutex> guard_read(networkTraffic.recvMutex);
             networkTraffic.received.push(packetToReceive);
         }
@@ -26,14 +26,10 @@ void handlePackets(int socket, std::atomic<bool>& clientRunning, NetworkTraffic&
         if (networkTraffic.sent.empty())
             continue;
 
-        while(!networkTraffic.sent.empty()) {
-            bool packetSent = false;
+        while (!networkTraffic.sent.empty()) {
             Packet packet = networkTraffic.sent.front();
             networkTraffic.sent.pop();
-            while(!packetSent)
-            {
-                packetSent = sendPacket(socket, packet);
-            }
+            sendPacket(socket, packet);
             freePacket(packet);
         }
     }
@@ -48,45 +44,50 @@ void handleMusicStreamPacket(MusicPlayer& musicPlayer, const Packet& musicStream
     musicPlayer.fetchAudioToMemory(musicStreamPacket.data, musicStreamPacket.dataSize);
 }
 
+void handleMusicStreamNamePacket(MusicPlayer& musicPlayer, const Packet& musicStreamNamePacket) {
+    std::string newName(musicStreamNamePacket.data);
+    musicPlayer.setSongName(newName);
+}
+
 void handleMusicStreamSizePacket(MusicPlayer& musicPlayer, const Packet& musicStreamSizePacket) {
     int musicFileSize = 0;
     std::memcpy(&musicFileSize, musicStreamSizePacket.data, musicStreamSizePacket.dataSize);
     musicPlayer.startFetchAudio(musicFileSize);
 }
 
-void processPacketsReceived(std::atomic<bool>& clientRunning, std::atomic<bool>& songPlaying, std::atomic<bool>& shouldPrintMainMenu, NetworkTraffic& networkTraffic, MusicPlayer& musicPlayer)
-{
-    while(clientRunning)
-    {
+void processPacketsReceived(std::atomic<bool>& clientRunning, std::atomic<bool>& songPlaying,
+                            std::atomic<bool>& shouldPrintMainMenu, NetworkTraffic& networkTraffic,
+                            MusicPlayer& musicPlayer) {
+    while (clientRunning) {
         std::lock_guard<std::mutex> guard(networkTraffic.recvMutex);
-        while(!networkTraffic.received.empty())
-        {
-            Packet &packet = networkTraffic.received.front();
+        while (!networkTraffic.received.empty()) {
+            Packet& packet = networkTraffic.received.front();
             networkTraffic.received.pop();
 
-            if(packet.packetType == PacketType::SIZE)
-            {
+            if (packet.packetType == PacketType::STREAM_SIZE) {
                 handleMusicStreamSizePacket(musicPlayer, packet);
                 freePacket(packet);
-            }
-            else if(packet.packetType == PacketType::STREAM)
-            {
+            } else if (packet.packetType == PacketType::STREAM) {
                 handleMusicStreamPacket(musicPlayer, packet);
                 freePacket(packet);
 
-                if(musicPlayer.readyToPlayMusic() && !songPlaying)
-                {
+                if (musicPlayer.readyToPlayMusic() && !songPlaying) {
                     musicPlayer.playMusic();
                     songPlaying = true;
                     shouldPrintMainMenu = true;
                 }
+            } else if (packet.packetType == PacketType::STREAM_NAME) {
+                handleMusicStreamNamePacket(musicPlayer, packet);
+                freePacket(packet);
+            } else if (packet.packetType == PacketType::STREAM_HEADER) {
+                handleMusicStreamPacket(musicPlayer, packet);
+                freePacket(packet);
             }
         }
     }
 }
 
-void printMainMenu()
-{
+void printMainMenu() {
     std::cout << "***********\n";
     std::cout << "S: Request a new song\n";
     std::cout << "Q: Quit\n";
@@ -95,7 +96,7 @@ void printMainMenu()
 
 
 int main() {
-    std::atomic<bool> clientRunning  = { true } ;
+    std::atomic<bool> clientRunning = {true};
     std::atomic<bool> songPlaying = {false};
     std::atomic<bool> shouldPrintMainMenu = {false};
     NetworkTraffic networkTraffic;
@@ -105,7 +106,7 @@ int main() {
 
     int clientSocket;
     std::string serverIp = "127.0.0.1";
-    struct sockaddr_in serverAddr {AF_INET, htons(1100)};
+    struct sockaddr_in serverAddr{AF_INET, htons(1100)};
 
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
@@ -117,16 +118,14 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    if(inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr)<=0)
-    {
+    if (inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr) <= 0) {
         std::cerr << "Invalid address/ Address not supported\n";
         shutdownEngine();
         return EXIT_FAILURE;
     }
 
-    int connectRes = connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
-    if(connectRes < 0 )
-    {
+    int connectRes = connect(clientSocket, (struct sockaddr*) &serverAddr, sizeof(serverAddr));
+    if (connectRes < 0) {
         std::cerr << "Connection failed\n";
         shutdownEngine();
         return EXIT_FAILURE;
@@ -137,35 +136,31 @@ int main() {
 
     std::thread threadHandlePackets(handlePackets, clientSocket, std::ref(clientRunning), std::ref(networkTraffic));
 
-    std::thread threadProcessPackets(processPacketsReceived, std::ref(clientRunning), std::ref(songPlaying), std::ref(shouldPrintMainMenu), std::ref(networkTraffic), std::ref(musicPlayer));
+    std::thread threadProcessPackets(processPacketsReceived, std::ref(clientRunning), std::ref(songPlaying),
+                                     std::ref(shouldPrintMainMenu), std::ref(networkTraffic), std::ref(musicPlayer));
 
     bool userExited = false;
     char input;
-    while(!userExited)
-    {
-        if(shouldPrintMainMenu)
-        {
+    while (!userExited) {
+        if (shouldPrintMainMenu) {
             shouldPrintMainMenu = false;
             printMainMenu();
             std::cin >> input;
 
-            if(input == 'Q')
-            {
+            if (input == 'Q') {
                 userExited = true;
             }
         }
     }
 
     // Inform server that we have disconnected
-    Packet disconnect {PacketType::END, 0, nullptr};
+    Packet disconnect{PacketType::END, 0, nullptr};
     putPacketOnQueue(disconnect, networkTraffic);
 
     bool disconnectPacketSent = false;
-    while(!disconnectPacketSent)
-    {
+    while (!disconnectPacketSent) {
         std::lock_guard<std::mutex> guard(networkTraffic.sentMutex);
-        if(networkTraffic.sent.empty())
-        {
+        if (networkTraffic.sent.empty()) {
             disconnectPacketSent = true;
         }
     }

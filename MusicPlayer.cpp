@@ -8,7 +8,7 @@ MusicPlayer::MusicPlayer() {
     audioDataCreated = false;
 }
 
-void MusicPlayer::setSongName(const char* songName) {
+void MusicPlayer::setSongName(std::string songName) {
     audioName = songName;
 }
 
@@ -23,7 +23,7 @@ bool MusicPlayer::readyToPlayMusic() const {
     return audioDataCurPos > 500000;
 }
 
-void MusicPlayer::fetchAudioToMemory(char* musicData, unsigned int musicDataSize) {
+void MusicPlayer::fetchAudioToMemory(char* musicData, int musicDataSize) {
     std::memcpy(audioData.get() + audioDataCurPos, musicData, musicDataSize);
     audioDataCurPos += musicDataSize;
 

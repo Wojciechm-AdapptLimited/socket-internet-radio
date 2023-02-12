@@ -12,9 +12,9 @@ static irrklang::ISoundEngine* s_engine;
 class MusicPlayer {
 public:
     explicit MusicPlayer();
-    void setSongName(const char* songName);
+    void setSongName(std::string songName);
     void startFetchAudio(int musicSize);
-    void fetchAudioToMemory(char* musicData, unsigned int musicDataSize);
+    void fetchAudioToMemory(char* musicData, int musicDataSize);
 
     [[nodiscard]] bool readyToPlayMusic() const;
     void playMusic();

@@ -23,13 +23,10 @@ void Client::sendPacketToClient(Packet& packet) {
     }
 }
 
-std::optional<Packet> Client::receivePacketFromClient() {
-    Packet packet = receivePacket(socket);
+void Client::receivePacketFromClient(Packet& packet) {
+    receivePacket(socket, packet);
 
     if (packet.packetType == PacketType::END) {
         handleError();
-        return {};
     }
-
-    return packet;
 }
