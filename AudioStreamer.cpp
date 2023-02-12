@@ -21,13 +21,13 @@ void AudioStreamer::streamAudioFile(std::ifstream& audio) {
     currentFileSize = audio.tellg();
     audio.seekg (0, std::ifstream::beg);
 
-    audio.read(currentFileHeader.data(), 145);
+    int sent = audio.readsome(currentFileHeader.data(), DATA_SIZE);
 
     broadcastInfo();
 
-    int sent = 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    while (sent < (currentFileSize - 145) && !finishStreaming) {
+    while (sent < currentFileSize && !finishStreaming) {
         if (isRequestedNext) {
             isRequestedNext = false;
             return;
@@ -38,9 +38,12 @@ void AudioStreamer::streamAudioFile(std::ifstream& audio) {
         Packet musicStream {};
         musicStream.packetType = PacketType::STREAM;
         musicStream.dataSize = read;
-        musicStream.data = audioBuffer.data();
+        musicStream.data = new char[DATA_SIZE];
+        memcpy(musicStream.data, audioBuffer.data(), read);
 
         broadcastAudio(musicStream);
+
+        freePacket(musicStream);
 
         sent += read;
 

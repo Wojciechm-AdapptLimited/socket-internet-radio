@@ -1,5 +1,7 @@
 #include "MusicPlayer.h"
 
+#include <utility>
+
 MusicPlayer::MusicPlayer() {
     music = nullptr;
     audioData = nullptr;
@@ -9,10 +11,14 @@ MusicPlayer::MusicPlayer() {
 }
 
 void MusicPlayer::setSongName(std::string songName) {
-    audioName = songName;
+    audioName = std::move(songName);
 }
 
 void MusicPlayer::startFetchAudio(int musicSize) {
+    if (audioDataCreated) {
+        stopMusic();
+    }
+
     audioDataCreated = false;
     audioDataSize = musicSize;
     audioData = std::make_unique<irrklang::ik_c8[]>(audioDataSize);
@@ -27,8 +33,7 @@ void MusicPlayer::fetchAudioToMemory(char* musicData, int musicDataSize) {
     std::memcpy(audioData.get() + audioDataCurPos, musicData, musicDataSize);
     audioDataCurPos += musicDataSize;
 
-    if(!audioDataCreated)
-    {
+    if (!audioDataCreated) {
         s_engine->addSoundSourceFromMemory(audioData.get(), audioDataSize, audioName.c_str(), false);
         audioDataCreated = true;
     }
@@ -39,8 +44,7 @@ void MusicPlayer::playMusic() {
 }
 
 void MusicPlayer::stopMusic() {
-    if(music)
-    {
+    if (music) {
         s_engine->removeSoundSource(audioName.c_str());
         music->drop();
     }

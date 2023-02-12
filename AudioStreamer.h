@@ -23,7 +23,7 @@ private:
     std::deque<std::filesystem::path> audioQueue;
     std::vector<std::filesystem::path> audioFiles;
 
-    std::vector<char> currentFileHeader = std::vector<char>(145, 0);
+    std::vector<char> currentFileHeader = std::vector<char>(DATA_SIZE, 0);
     std::filesystem::path currentFileName;
     int currentFileSize;
 

@@ -10,7 +10,7 @@
 std::atomic<bool> g_exit_program{false};
 
 void sig_handler(int signum) {
-    if (signum == SIGTERM) {
+    if (signum == SIGTERM || signum == SIGINT) {
         std::cout << "Received termination signal" << std::endl;
         g_exit_program = true;
     }
@@ -52,6 +52,7 @@ int main() {
     sa.sa_handler = sig_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
 
     struct pollfd pollFd = {serverSocket, POLLIN, 0};

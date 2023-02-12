@@ -62,14 +62,15 @@ void processPacketsReceived(std::atomic<bool>& clientRunning, std::atomic<bool>&
         std::lock_guard<std::mutex> guard(networkTraffic.recvMutex);
         while (!networkTraffic.received.empty()) {
             Packet& packet = networkTraffic.received.front();
-            networkTraffic.received.pop();
-
             if (packet.packetType == PacketType::STREAM_SIZE) {
                 handleMusicStreamSizePacket(musicPlayer, packet);
+                songPlaying = false;
                 freePacket(packet);
+                networkTraffic.received.pop();
             } else if (packet.packetType == PacketType::STREAM) {
                 handleMusicStreamPacket(musicPlayer, packet);
                 freePacket(packet);
+                networkTraffic.received.pop();
 
                 if (musicPlayer.readyToPlayMusic() && !songPlaying) {
                     musicPlayer.playMusic();
@@ -79,9 +80,11 @@ void processPacketsReceived(std::atomic<bool>& clientRunning, std::atomic<bool>&
             } else if (packet.packetType == PacketType::STREAM_NAME) {
                 handleMusicStreamNamePacket(musicPlayer, packet);
                 freePacket(packet);
+                networkTraffic.received.pop();
             } else if (packet.packetType == PacketType::STREAM_HEADER) {
                 handleMusicStreamPacket(musicPlayer, packet);
                 freePacket(packet);
+                networkTraffic.received.pop();
             }
         }
     }

@@ -19,22 +19,29 @@ ClientManager::ClientManager(std::shared_ptr<AudioStreamer> streamer) : streamer
     broadcastInfo = [&]() {
         std::unique_lock<std::mutex> lock(clientMutex);
 
-        if (poll(pollFds.data(), pollFds.size(), 100) < 0) {
+        if (poll(pollFds.data(), pollFds.size(), 100) <= 0) {
             return;
         }
 
         Packet streamSize {};
         Packet streamName {};
+        Packet streamHeader {};
 
         this->streamer->getCurrentFileSizePacket(streamSize);
         this->streamer->getCurrentFileNamePacket(streamName);
+        this->streamer->getCurrentFileHeaderPacket(streamHeader);
 
         for (int i = 0; i < pollFds.size(); ++i) {
             if (pollFds[i].revents & POLLOUT) {
                 clients[i]->sendPacketToClient(streamSize);
                 clients[i]->sendPacketToClient(streamName);
+                clients[i]->sendPacketToClient(streamHeader);
             }
         }
+
+        freePacket(streamSize);
+        freePacket(streamName);
+        freePacket(streamHeader);
     };
 
     this->streamer->broadcastAudio = broadcastAudio;
@@ -49,6 +56,8 @@ void ClientManager::addClient(std::unique_ptr<Client>& newClient, pollfd newPoll
     std::unique_lock<std::mutex> lock(clientMutex);
 
     sendInfoToClient(newClient);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     clients.push_back(std::move(newClient));
     pollFds.push_back(newPollFd);
