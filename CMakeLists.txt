@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.22)
 project(internet_radio)
 
 if( CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR )

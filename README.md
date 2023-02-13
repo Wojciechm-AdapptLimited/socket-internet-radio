@@ -1,11 +1,11 @@
 # Internet Radio over IP
 
-## 1. Autorzy
+### 1. Autorzy
 
 * Wojciech Mączka 148106
 * Iga Pietrusiewicz 148162
 
-## 2. Opis
+### 2. Opis
 
 Celem projektu było stworzenie radia internetowego komunikującego się równolegle z
 wieloma klientami, używając API bsd-sockets. Wprowadzone dla naszego radia funkcjonalności
@@ -18,7 +18,7 @@ obejmują:
 
 Do stworzenia zarówno serwera, jak i klienta wykorzystano język C/C++ i API bsd-sockets.
 
-## 3. Komunikacja
+### 3. Komunikacja
 
 * Przed dołączeniem nowego klienta to listy słuchaczy, serwer wysyła podstawowe informacje
   (stan kolejki, lista plików poza kolejką, rozmiar bieżąco odtwarzanego pliku, jego
@@ -31,7 +31,7 @@ Do stworzenia zarówno serwera, jak i klienta wykorzystano język C/C++ i API bs
   bieżący stan kolejki
 * Przy rozłączaniu się, klient przesyła pakiet o tym informujący
 
-## 4. Implementacja
+### 4. Implementacja
 
 * Serwer:
     * Implementacja klas: AudioStreamer (odpowiedzialny za odczytywanie plików i
@@ -53,6 +53,6 @@ Do stworzenia zarówno serwera, jak i klienta wykorzystano język C/C++ i API bs
 * Zarówno klient, jak i serwer wykorzystują strukturę Package, która symbolizuje jeden pakiet
   i przechowuje typ, rozmiar danych i dane
 
-## 5. Uruchomienie
+### 5. Uruchomienie
 
 * 
