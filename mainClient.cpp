@@ -6,10 +6,23 @@
 #include <atomic>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
+#include <gtkmm.h>
 
 #include "MusicPlayer.h"
 #include "Packet.h"
+#include "RadioWindow.h"
+
+
+struct SessionData {
+    std::atomic<bool> songPlaying{false};
+    std::atomic<bool> shouldPrintMenu{false};
+    std::mutex fileMutex;
+
+    MusicPlayer musicPlayer;
+    NetworkTraffic networkTraffic;
+    std::vector<std::string> queue;
+    std::vector<std::string> availableFiles;
+};
 
 
 void handlePackets(int socket, std::atomic<bool>& clientRunning, NetworkTraffic& networkTraffic) {
@@ -55,55 +68,133 @@ void handleMusicStreamSizePacket(MusicPlayer& musicPlayer, const Packet& musicSt
     musicPlayer.startFetchAudio(musicFileSize);
 }
 
-void processPacketsReceived(std::atomic<bool>& clientRunning, std::atomic<bool>& songPlaying,
-                            std::atomic<bool>& shouldPrintMainMenu, NetworkTraffic& networkTraffic,
-                            MusicPlayer& musicPlayer) {
-    while (clientRunning) {
-        std::lock_guard<std::mutex> guard(networkTraffic.recvMutex);
-        while (!networkTraffic.received.empty()) {
-            Packet& packet = networkTraffic.received.front();
-            if (packet.packetType == PacketType::STREAM_SIZE) {
-                handleMusicStreamSizePacket(musicPlayer, packet);
-                songPlaying = false;
-                freePacket(packet);
-                networkTraffic.received.pop();
-            } else if (packet.packetType == PacketType::STREAM) {
-                handleMusicStreamPacket(musicPlayer, packet);
-                freePacket(packet);
-                networkTraffic.received.pop();
+void handleFileListPacket(SessionData& sessionData, const Packet& musicQueuePacket) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    std::string filesSerialized{musicQueuePacket.data};
+    if (musicQueuePacket.packetType == PacketType::QUEUE) {
+        sessionData.queue = split(filesSerialized, ";");
+    } else {
+        sessionData.availableFiles = split(filesSerialized, ";");
+    }
+}
 
-                if (musicPlayer.readyToPlayMusic() && !songPlaying) {
-                    musicPlayer.playMusic();
-                    songPlaying = true;
-                    shouldPrintMainMenu = true;
+void prepareFileRemovePacket(SessionData& sessionData, Packet& packet, int idx) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    if (idx <= 0 || idx > sessionData.queue.size()) {
+        return;
+    }
+    std::string fileName = sessionData.queue[idx - 1];
+    packet.packetType = PacketType::REMOVE;
+    packet.dataSize = static_cast<unsigned int>(fileName.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, fileName.data(), packet.dataSize);
+}
+
+void prepareFileAddPacket(SessionData& sessionData, Packet& packet, int idx) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    if (idx <= 0 || idx > sessionData.availableFiles.size()) {
+        return;
+    }
+    std::string fileName = sessionData.availableFiles[idx - 1];
+    packet.packetType = PacketType::ADD;
+    packet.dataSize = static_cast<unsigned int>(fileName.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, fileName.data(), packet.dataSize);
+}
+
+void prepareModifyOrderPacket(SessionData& sessionData, Packet& packet, const std::vector<int>& indices) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    std::string message;
+    std::set<int> used;
+    for(const auto& idx : indices){
+        if (idx <= 0 || idx > sessionData.queue.size() || used.contains(idx)) {
+            return;
+        }
+        used.emplace(idx);
+        message += sessionData.queue[idx - 1] + ";";
+    }
+
+    packet.packetType = PacketType::REORDER;
+    packet.dataSize = static_cast<unsigned int>(message.size() + 1);
+    packet.data = new char[DATA_SIZE];
+    memcpy(packet.data, message.data(), packet.dataSize);
+}
+
+void processPacketsReceived(std::atomic<bool>& clientRunning, SessionData& sessionData) {
+    while (clientRunning) {
+        std::lock_guard<std::mutex> guard(sessionData.networkTraffic.recvMutex);
+        while (!sessionData.networkTraffic.received.empty()) {
+            Packet& packet = sessionData.networkTraffic.received.front();
+            if (packet.packetType == PacketType::STREAM_SIZE) {
+                handleMusicStreamSizePacket(sessionData.musicPlayer, packet);
+                sessionData.songPlaying = false;
+                freePacket(packet);
+                sessionData.networkTraffic.received.pop();
+            } else if (packet.packetType == PacketType::STREAM) {
+                handleMusicStreamPacket(sessionData.musicPlayer, packet);
+                freePacket(packet);
+                sessionData.networkTraffic.received.pop();
+
+                if (sessionData.musicPlayer.readyToPlayMusic() && !sessionData.songPlaying) {
+                    sessionData.musicPlayer.playMusic();
+                    sessionData.songPlaying = true;
+                    sessionData.shouldPrintMenu = true;
                 }
             } else if (packet.packetType == PacketType::STREAM_NAME) {
-                handleMusicStreamNamePacket(musicPlayer, packet);
+                handleMusicStreamNamePacket(sessionData.musicPlayer, packet);
                 freePacket(packet);
-                networkTraffic.received.pop();
+                sessionData.networkTraffic.received.pop();
             } else if (packet.packetType == PacketType::STREAM_HEADER) {
-                handleMusicStreamPacket(musicPlayer, packet);
+                handleMusicStreamPacket(sessionData.musicPlayer, packet);
                 freePacket(packet);
-                networkTraffic.received.pop();
+                sessionData.networkTraffic.received.pop();
+            } else if (packet.packetType == PacketType::QUEUE || packet.packetType == PacketType::FILES) {
+                handleFileListPacket(sessionData, packet);
+                freePacket(packet);
+                sessionData.networkTraffic.received.pop();
             }
         }
     }
 }
 
-void printMainMenu() {
+void printMainMenu(SessionData& sessionData) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
     std::cout << "***********\n";
-    std::cout << "S: Request a new song\n";
+    std::cout << "Currently playing: " << sessionData.musicPlayer.getSongName() << "\n";
+    std::cout << "Next: " << sessionData.queue.front() << "\n";
+    std::cout << "S: Skip the current song\n";
+    std::cout << "A: Add song to the queue\n";
+    std::cout << "R: Remove the song from the queue\n";
+    std::cout << "M: Modify the order of the queue\n";
     std::cout << "Q: Quit\n";
     std::cout << "***********\n";
 }
 
+void printQueue(SessionData& sessionData) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    int idx = 1;
+    std::cout << "***********\n";
+    for (const auto& file: sessionData.queue) {
+        std::cout << idx << " " << file << "\n";
+        idx++;
+    }
+    std::cout << "***********\n";
+}
 
-int main() {
+void printAvailableFiles(SessionData& sessionData) {
+    std::unique_lock<std::mutex> lock(sessionData.fileMutex);
+    int idx = 1;
+    std::cout << "***********\n";
+    for (const auto& file: sessionData.availableFiles) {
+        std::cout << idx << " " << file << "\n";
+        idx++;
+    }
+    std::cout << "***********\n";
+}
+
+int main(int argc, char* argv[]) {
     std::atomic<bool> clientRunning = {true};
-    std::atomic<bool> songPlaying = {false};
-    std::atomic<bool> shouldPrintMainMenu = {false};
-    NetworkTraffic networkTraffic;
-    MusicPlayer musicPlayer;
+    SessionData sessionData;
 
     initEngine();
 
@@ -135,35 +226,83 @@ int main() {
     }
 
 
-    musicPlayer.setSongName("test");
+    sessionData.musicPlayer.setSongName("test");
 
-    std::thread threadHandlePackets(handlePackets, clientSocket, std::ref(clientRunning), std::ref(networkTraffic));
+    std::thread threadHandlePackets(handlePackets, clientSocket, std::ref(clientRunning),
+                                    std::ref(sessionData.networkTraffic));
 
-    std::thread threadProcessPackets(processPacketsReceived, std::ref(clientRunning), std::ref(songPlaying),
-                                     std::ref(shouldPrintMainMenu), std::ref(networkTraffic), std::ref(musicPlayer));
+    std::thread threadProcessPackets(processPacketsReceived, std::ref(clientRunning), std::ref(sessionData));
 
     bool userExited = false;
     char input;
+    int fileIdx;
+    std::vector<int> fileIndices;
     while (!userExited) {
-        if (shouldPrintMainMenu) {
-            shouldPrintMainMenu = false;
-            printMainMenu();
+        if (sessionData.shouldPrintMenu) {
+            sessionData.shouldPrintMenu = false;
+            printMainMenu(sessionData);
             std::cin >> input;
 
             if (input == 'Q') {
                 userExited = true;
+            } else if (input == 'S') {
+                Packet packet{PacketType::SKIP, 0, nullptr};
+                putPacketOnQueue(packet, sessionData.networkTraffic);
+            } else if (input == 'A' && !sessionData.availableFiles.empty()) {
+                printAvailableFiles(sessionData);
+                std::cin >> fileIdx;
+                Packet packet{};
+                prepareFileAddPacket(sessionData, packet, fileIdx);
+                if (packet.dataSize > 0) {
+                    putPacketOnQueue(packet, sessionData.networkTraffic);
+                } else {
+                    std::cout << "Invalid index\n";
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                sessionData.shouldPrintMenu = true;
+            } else if (input == 'R' && !sessionData.queue.empty()) {
+                printQueue(sessionData);
+                std::cin >> fileIdx;
+                Packet packet{};
+                prepareFileRemovePacket(sessionData, packet, fileIdx);
+                if (packet.dataSize > 0) {
+                    putPacketOnQueue(packet, sessionData.networkTraffic);
+                } else {
+                    std::cout << "Invalid index\n";
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                sessionData.shouldPrintMenu = true;
+            } else if (input == 'M' && !sessionData.queue.empty()) {
+                printQueue(sessionData);
+                fileIndices.clear();
+                for (int i = 0; i < sessionData.queue.size(); i++) {
+                    std::cin >> fileIdx;
+                    fileIndices.emplace_back(fileIdx);
+                }
+                Packet packet{};
+                prepareModifyOrderPacket(sessionData, packet, fileIndices);
+                if (packet.dataSize > 0) {
+                    putPacketOnQueue(packet, sessionData.networkTraffic);
+                } else {
+                    std::cout << "Invalid index\n";
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                sessionData.shouldPrintMenu = true;
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                sessionData.shouldPrintMenu = true;
             }
         }
     }
 
     // Inform server that we have disconnected
     Packet disconnect{PacketType::END, 0, nullptr};
-    putPacketOnQueue(disconnect, networkTraffic);
+    putPacketOnQueue(disconnect, sessionData.networkTraffic);
 
     bool disconnectPacketSent = false;
     while (!disconnectPacketSent) {
-        std::lock_guard<std::mutex> guard(networkTraffic.sentMutex);
-        if (networkTraffic.sent.empty()) {
+        std::lock_guard<std::mutex> guard(sessionData.networkTraffic.sentMutex);
+        if (sessionData.networkTraffic.sent.empty()) {
             disconnectPacketSent = true;
         }
     }

@@ -103,7 +103,7 @@ void AudioStreamer::reorderQueue(const std::vector<std::filesystem::path>& newOr
 }
 
 void AudioStreamer::addToQueue(const std::filesystem::path& path) {
-    std::unique_lock<std::mutex> lock(audioMutex);\
+    std::unique_lock<std::mutex> lock(audioMutex);
 
     auto it = std::ranges::find_if(audioFiles, [path](const std::filesystem::path& file) {
         return file.filename() == path;
@@ -127,7 +127,9 @@ void AudioStreamer::getAvailableFilesPacket(Packet& packet) {
 
     std::string message;
     for(const auto& file : audioFiles){
-        message += file.filename().string() + ";";
+        if (std::find(audioQueue.begin(), audioQueue.end(), file) == audioQueue.end() && file != currentFileName) {
+            message += file.filename().string() + ";";
+        }
     }
 
     packet.packetType = PacketType::FILES;

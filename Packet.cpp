@@ -88,5 +88,9 @@ std::vector<std::string> split(std::string s, const std::string& delimiter) {
     }
     vec.push_back(s);
 
+    if (vec.back().empty()) {
+        vec.pop_back();
+    }
+
     return vec;
 }

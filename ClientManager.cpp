@@ -23,22 +23,30 @@ ClientManager::ClientManager(std::shared_ptr<AudioStreamer> streamer) : streamer
             return;
         }
 
+        Packet queue {};
+        Packet files {};
         Packet streamSize {};
         Packet streamName {};
         Packet streamHeader {};
 
+        this->streamer->getQueueStatePacket(queue);
+        this->streamer->getAvailableFilesPacket(files);
         this->streamer->getCurrentFileSizePacket(streamSize);
         this->streamer->getCurrentFileNamePacket(streamName);
         this->streamer->getCurrentFileHeaderPacket(streamHeader);
 
         for (int i = 0; i < pollFds.size(); ++i) {
             if (pollFds[i].revents & POLLOUT) {
+                clients[i]->sendPacketToClient(queue);
+                clients[i]->sendPacketToClient(files);
                 clients[i]->sendPacketToClient(streamSize);
                 clients[i]->sendPacketToClient(streamName);
                 clients[i]->sendPacketToClient(streamHeader);
             }
         }
 
+        freePacket(queue);
+        freePacket(files);
         freePacket(streamSize);
         freePacket(streamName);
         freePacket(streamHeader);
@@ -120,6 +128,24 @@ void ClientManager::handleRequests() {
                     }
 
                     freePacket(packet);
+
+                    Packet queue {};
+                    Packet files {};
+                    streamer->getQueueStatePacket(queue);
+                    streamer->getAvailableFilesPacket(files);
+
+                    for (int j = 0; j < pollFds.size(); ++j) {
+                        if (pollFds[j].revents & POLLOUT) {
+                            clients[j]->sendPacketToClient(queue);
+                            clients[j]->sendPacketToClient(files);
+                        }
+                    }
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+                    freePacket(queue);
+                    freePacket(files);
+
                 }
                 if (pollFds[i].revents & (POLLHUP | POLLERR)) {
                     clients.erase(clients.begin() + i);
@@ -132,18 +158,26 @@ void ClientManager::handleRequests() {
 }
 
 void ClientManager::sendInfoToClient(std::unique_ptr<Client>& client) {
+    Packet queue {};
+    Packet files {};
     Packet streamSize {};
     Packet streamName {};
     Packet streamHeader {};
 
+    streamer->getQueueStatePacket(queue);
+    streamer->getAvailableFilesPacket(files);
     streamer->getCurrentFileSizePacket(streamSize);
     streamer->getCurrentFileNamePacket(streamName);
     streamer->getCurrentFileHeaderPacket(streamHeader);
 
+    client->sendPacketToClient(queue);
+    client->sendPacketToClient(files);
     client->sendPacketToClient(streamSize);
     client->sendPacketToClient(streamName);
     client->sendPacketToClient(streamHeader);
 
+    freePacket(queue);
+    freePacket(files);
     freePacket(streamSize);
     freePacket(streamName);
     freePacket(streamHeader);

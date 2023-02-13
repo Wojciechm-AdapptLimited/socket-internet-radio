@@ -14,6 +14,10 @@ void MusicPlayer::setSongName(std::string songName) {
     audioName = std::move(songName);
 }
 
+std::string MusicPlayer::getSongName() const {
+    return audioName;
+}
+
 void MusicPlayer::startFetchAudio(int musicSize) {
     if (audioDataCreated) {
         stopMusic();
@@ -40,7 +44,7 @@ void MusicPlayer::fetchAudioToMemory(char* musicData, int musicDataSize) {
 }
 
 void MusicPlayer::playMusic() {
-    music = s_engine->play2D(audioName.c_str(), true, false, false, irrklang::ESM_STREAMING, true);
+    music = s_engine->play2D(audioName.c_str(), false, false, false, irrklang::ESM_STREAMING, true);
 }
 
 void MusicPlayer::stopMusic() {

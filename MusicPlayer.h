@@ -17,6 +17,7 @@ public:
     void fetchAudioToMemory(char* musicData, int musicDataSize);
 
     [[nodiscard]] bool readyToPlayMusic() const;
+    [[nodiscard]] std::string getSongName() const;
     void playMusic();
     void stopMusic();
 
@@ -26,8 +27,8 @@ private:
     std::unique_ptr<irrklang::ik_c8[]> audioData;
     irrklang::ik_s32 audioDataSize;
     irrklang::ik_s32 audioDataCurPos;
+    std::string  audioName;
     bool audioDataCreated;
-    std::string audioName;
 };
 
 void initEngine();
