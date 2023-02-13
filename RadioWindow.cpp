@@ -7,17 +7,21 @@ RadioWindow::RadioWindow() : skipButton("Skip"), addButton("Add"), removeButton(
 
     add(buttonBox);
 
+    buttonBox.set_border_width(5);
+    buttonBox.set_layout(Gtk::BUTTONBOX_SPREAD);
+    buttonBox.set_spacing(40);
+
     skipButton.signal_clicked().connect(sigc::bind<Glib::ustring>(sigc::mem_fun(*this, &RadioWindow::onButtonClicked), "skip"));
-    buttonBox.pack_start(skipButton);
+    buttonBox.add(skipButton);
 
     addButton.signal_clicked().connect(sigc::bind<Glib::ustring>(sigc::mem_fun(*this, &RadioWindow::onButtonClicked), "add"));
-    buttonBox.pack_start(addButton);
+    buttonBox.add(addButton);
 
     removeButton.signal_clicked().connect(sigc::bind<Glib::ustring>(sigc::mem_fun(*this, &RadioWindow::onButtonClicked), "remove"));
-    buttonBox.pack_start(removeButton);
+    buttonBox.add(removeButton);
 
     reorderButton.signal_clicked().connect(sigc::bind<Glib::ustring>(sigc::mem_fun(*this, &RadioWindow::onButtonClicked), "reorder"));
-    buttonBox.pack_start(reorderButton);
+    buttonBox.add(reorderButton);
 
     skipButton.show();
     addButton.show();

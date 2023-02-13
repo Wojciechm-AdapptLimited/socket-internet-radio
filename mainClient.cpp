@@ -6,11 +6,10 @@
 #include <atomic>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <gtkmm.h>
+#include <set>
 
 #include "MusicPlayer.h"
 #include "Packet.h"
-#include "RadioWindow.h"
 
 
 struct SessionData {
@@ -192,7 +191,8 @@ void printAvailableFiles(SessionData& sessionData) {
     std::cout << "***********\n";
 }
 
-int main(int argc, char* argv[]) {
+int main() {
+
     std::atomic<bool> clientRunning = {true};
     SessionData sessionData;
 

@@ -7,7 +7,7 @@
 
 class RadioWindow : public Gtk::Window {
 private:
-    Gtk::Box buttonBox;
+    Gtk::ButtonBox buttonBox;
     Gtk::Button skipButton, addButton, removeButton, reorderButton;
 
     void onButtonClicked(const Glib::ustring& data);
