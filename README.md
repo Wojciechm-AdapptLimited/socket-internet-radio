@@ -55,4 +55,20 @@ Do stworzenia zarówno serwera, jak i klienta wykorzystano język C/C++ i API bs
 
 ### 5. Uruchomienie
 
-* 
+* Zbudowanie projektu
+    ```shell
+    mkdir build
+    cd build
+    cmake ..
+    make
+    ```   
+* Następnie (w osobnych oknach terminala)
+    ```shell
+    ./internet_radio_server
+    ```
+    ```shell
+    ./internet_radio_client
+    ```
+* Uwaga: przy odpalaniu klienta występuje bug (prawdopodobnie związany z biblioteką
+  irrklang), przez który zamiast utworu słyszymy szum. Najlepiej spróbować wtedy zrestartować klienta
+  lub przewinąć do następnego utworu
